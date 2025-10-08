@@ -9,6 +9,8 @@ import se.urmo.wolf.core.StateManager;
 import se.urmo.wolf.world.*;
 import se.urmo.wolf.entities.*;
 import se.urmo.wolf.render.Raycaster;
+import se.urmo.wolf.render.MinimapRenderer;
+import se.urmo.wolf.render.HudRenderer;
 import se.urmo.wolf.gfx.Assets;
 
 import java.awt.*;
@@ -23,12 +25,16 @@ public class PlayState implements State {
     private GameMap map;
     private final Player player;
     private final List<SpriteEntity> sprites = new ArrayList<>();
-    private final Raycaster renderer;
+    private final Raycaster raycaster;
+
+    private final MinimapRenderer minimapRenderer = new MinimapRenderer();
+    private final HudRenderer hudRenderer = new HudRenderer();
 
     private String currentMapPath = "maps/map1.txt";
     private double spawnX, spawnY;
 
     private double timeSeconds = 0.0;
+    private boolean showMinimap = true;
     private Input inputRef;
 
     private double shootCooldown = 0.25;
@@ -50,8 +56,8 @@ public class PlayState implements State {
 
     private boolean deathSequence = false;
     private double deathTimer = 0.0;
-    private static final double FLASH_IN  = 0.08;
-    private static final double FLASH_HOLD= 0.15;
+    private static final double FLASH_IN = 0.08;
+    private static final double FLASH_HOLD = 0.15;
     private static final double FLASH_OUT = 0.60;
     private static final double DEATH_PAUSE = FLASH_IN + FLASH_HOLD + FLASH_OUT + 0.35;
     private float deathFlashAlpha = 0f;
@@ -60,8 +66,9 @@ public class PlayState implements State {
         this.sm = sm;
         this.player = new Player(1, 1, null);
         loadLevel(currentMapPath);
-        this.prevPX = player.x; this.prevPY = player.y;
-        this.renderer = new Raycaster(Game.WIDTH, Game.HEIGHT);
+        this.prevPX = player.x;
+        this.prevPY = player.y;
+        this.raycaster = new Raycaster(Game.WIDTH, Game.HEIGHT);
     }
 
     public void setLevelPath(String path) {
@@ -75,10 +82,8 @@ public class PlayState implements State {
         this.map = data.map;
 
         player.setMap(this.map);
-
         this.spawnX = data.playerStartX;
         this.spawnY = data.playerStartY;
-
         player.respawn(spawnX, spawnY);
 
         sprites.clear();
@@ -93,11 +98,15 @@ public class PlayState implements State {
     public void handleInput(Input input) {
         this.inputRef = input;
 
-        if (input.wasPressed(KeyEvent.VK_ESCAPE)) { sm.set(new MenuState(sm)); return; }
+        if (input.wasPressed(KeyEvent.VK_ESCAPE)) {
+            sm.set(new MenuState(sm));
+            return;
+        }
         if (deathSequence) return;
 
-        if (input.wasPressed(KeyEvent.VK_ENTER))  tryOpenDoorInFront();
-        if (input.wasPressed(KeyEvent.VK_SPACE))  tryShoot();
+        if (input.wasPressed(KeyEvent.VK_ENTER)) tryOpenDoorInFront();
+        if (input.wasPressed(KeyEvent.VK_SPACE)) tryShoot();
+        if (input.wasPressed(KeyEvent.VK_M)) showMinimap = !showMinimap;
     }
 
     private void tryOpenDoorInFront() {
@@ -105,8 +114,8 @@ public class PlayState implements State {
         int tx = (int) Math.floor(player.x + player.dirX * reach);
         int ty = (int) Math.floor(player.y + player.dirY * reach);
         double cx = tx + 0.5, cy = ty + 0.5;
-        double dist2 = (cx - player.x)*(cx - player.x) + (cy - player.y)*(cy - player.y);
-        if (dist2 > (1.6*1.6)) return;
+        double dist2 = (cx - player.x) * (cx - player.x) + (cy - player.y) * (cy - player.y);
+        if (dist2 > (1.6 * 1.6)) return;
         if (map.isDoor(tx, ty)) map.openDoor(tx, ty);
     }
 
@@ -140,14 +149,16 @@ public class PlayState implements State {
             double dist = Math.hypot(dx, dy);
             if (dist > SHOOT_MAX_DIST) continue;
 
-            double dot = (dx*dxView + dy*dyView) / (dist * (viewLen == 0 ? 1 : viewLen));
+            double dot = (dx * dxView + dy * dyView) / (dist * (viewLen == 0 ? 1 : viewLen));
             if (dot < cosThresh) continue;
-
             if (!hasLineOfSight(px, py, e.x, e.y)) continue;
 
             double aimErr = Math.acos(Math.max(-1, Math.min(1, dot)));
             double score = aimErr * 10.0 + dist * 0.01;
-            if (score < bestScore) { bestScore = score; best = e; }
+            if (score < bestScore) {
+                bestScore = score;
+                best = e;
+            }
         }
         return best;
     }
@@ -163,7 +174,7 @@ public class PlayState implements State {
         for (int i = 0; i < steps; i++) {
             rx += stepX * 0.25;
             ry += stepY * 0.25;
-            if (map.isSolid((int)rx, (int)ry)) return false;
+            if (map.isSolid((int) rx, (int) ry)) return false;
         }
         return true;
     }
@@ -205,7 +216,8 @@ public class PlayState implements State {
         double dx = player.x - prevPX;
         double dy = player.y - prevPY;
         double moved = Math.hypot(dx, dy);
-        prevPX = player.x; prevPY = player.y;
+        prevPX = player.x;
+        prevPY = player.y;
 
         if (moved > 1e-5) {
             weaponBobTime += dt * BOB_SPEED;
@@ -223,7 +235,6 @@ public class PlayState implements State {
         deathTimer = 0.0;
         weaponAnimating = false;
         weaponAnimElapsed = 0.0;
-
         if (player.getLives() > 0) player.loseLife();
     }
 
@@ -244,12 +255,11 @@ public class PlayState implements State {
         deathSequence = false;
         deathTimer = 0.0;
         deathFlashAlpha = 0f;
-
         shootTimer = 0.0;
         weaponAnimating = false;
         weaponAnimElapsed = 0.0;
-
-        prevPX = player.x; prevPY = player.y;
+        prevPX = player.x;
+        prevPY = player.y;
     }
 
     @Override
@@ -257,12 +267,19 @@ public class PlayState implements State {
         var g2 = window.getFrameGraphics();
         BufferedImage weaponFrame = currentWeaponFrame();
 
-        double phase = weaponBobTime;
-        double bobX = Math.sin(phase) * BOB_AMP_X * bobIntensity;
-        double bobY = Math.cos(phase * 2.0) * BOB_AMP_Y * bobIntensity;
+        // World (3D)
+        raycaster.render(window.getFramebuffer(), map, player, sprites, timeSeconds);
 
-        renderer.render(window.getFramebuffer(), g2, map, player, sprites, timeSeconds, weaponFrame, bobX, bobY);
+        // Overlays
+        if (showMinimap) {
+            minimapRenderer.render(g2, map, player, sprites, 8, 8, 160, 6);
+        }
+        hudRenderer.render(g2, player);
 
+        // Weapon (drawn as an overlay; bobbing)
+        renderWeapon(g2, weaponFrame, weaponBobOffsetX(), weaponBobOffsetY());
+
+        // Death flash
         if (deathSequence && deathFlashAlpha > 0f) {
             Composite old = g2.getComposite();
             g2.setComposite(AlphaComposite.SrcOver.derive(deathFlashAlpha));
@@ -272,6 +289,30 @@ public class PlayState implements State {
         }
 
         g2.dispose();
+    }
+
+    private double weaponBobOffsetX() {
+        return Math.sin(weaponBobTime) * BOB_AMP_X * bobIntensity;
+    }
+
+    private double weaponBobOffsetY() {
+        return Math.cos(weaponBobTime * 2.0) * BOB_AMP_Y * bobIntensity;
+    }
+
+    private void renderWeapon(Graphics2D g2, BufferedImage weaponFrame, double bobX, double bobY) {
+        if (weaponFrame == null) return;
+
+        int imgW = weaponFrame.getWidth();
+        int imgH = weaponFrame.getHeight();
+
+        double scale = 2.0;
+        int drawW = (int) (imgW * scale);
+        int drawH = (int) (imgH * scale);
+
+        int x = (int) ((Game.WIDTH - drawW) / 2 + bobX);
+        int y = (int) ((Game.HEIGHT - drawH - 8) + bobY);
+
+        g2.drawImage(weaponFrame, x, y, drawW, drawH, null);
     }
 
     private BufferedImage currentWeaponFrame() {
